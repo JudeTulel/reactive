@@ -29,6 +29,9 @@ contract PriceFeedMirror is IReactive {
         "updatePriceFeed(address,address,uint8,string,uint80,int256,uint256,uint256,uint80,bytes32,uint16)"
     ));
 
+    // --- Events ---
+    event Funded(address indexed funder, uint256 amount);
+
     // --- Modifier ---
     modifier onlyService() {
         require(msg.sender == address(service), "Pricer: caller not service");
@@ -109,6 +112,10 @@ contract PriceFeedMirror is IReactive {
             GAS_LIMIT,
             payload
         );
+    }
+
+    receive() external payable {
+        emit Funded(msg.sender, msg.value);
     }
 
     function _toSigned(uint256 value) private pure returns (int256 signed) {
