@@ -13,24 +13,28 @@ contract PriceFeedMirror is IReactive {
     uint256 public immutable originChainId;
     address public immutable chainlinkAggregatorAddress;
     uint256 public immutable destinationChainId;
-    address public immutable feedProxyAddress;
+    address public feedProxyAddress;
+    // Admin who can update mutable configuration (e.g. feed proxy)
+    address public owner;
     ISystemContract public immutable service;
-    
+
     // Feed metadata (hardcoded)
     uint8 public constant feedDecimals = 8; // MATIC/USD uses 8 decimals
     string public constant feedDescription = "MATIC / USD";
 
     // Constants
     uint64 private constant GAS_LIMIT = 1_000_000;
-    uint256 private constant ANSWER_UPDATED_TOPIC = uint256(keccak256("AnswerUpdated(int256,uint256,uint256)"));
-    bytes32 private constant CALLBACK_DOMAIN = keccak256("Reactive.PriceFeedMirror");
+    uint256 private constant ANSWER_UPDATED_TOPIC =
+        uint256(keccak256("AnswerUpdated(int256,uint256,uint256)"));
+    bytes32 private constant CALLBACK_DOMAIN =
+        keccak256("Reactive.PriceFeedMirror");
     uint16 private constant CALLBACK_VERSION = 1;
-    bytes4 private constant UPDATE_SELECTOR = bytes4(keccak256(
-        "updatePriceFeed(address,address,uint8,string,uint80,int256,uint256,uint256,uint80,bytes32,uint16)"
-    ));
-
-    // --- Events ---
-    event Funded(address indexed funder, uint256 amount);
+    bytes4 private constant UPDATE_SELECTOR =
+        bytes4(
+            keccak256(
+                "updatePriceFeed(address,address,uint8,string,uint80,int256,uint256,uint256,uint80,bytes32,uint16)"
+            )
+        );
 
     // --- Modifier ---
     modifier onlyService() {
@@ -50,18 +54,21 @@ contract PriceFeedMirror is IReactive {
         originChainId = _originChainId;
         chainlinkAggregatorAddress = _chainlinkAggregatorAddress;
         destinationChainId = _destinationChainId;
-        feedProxyAddress = _feedProxyAddress;
+    feedProxyAddress = _feedProxyAddress;
+    owner = msg.sender;
 
         // Attempt subscription to Chainlink's AnswerUpdated event on the origin chain.
         // Reactive dev deployments (without the system contract) may revert, so swallow failures.
-        try service.subscribe(
-            originChainId,
-            chainlinkAggregatorAddress,
-            ANSWER_UPDATED_TOPIC,
-            REACTIVE_IGNORE,
-            REACTIVE_IGNORE,
-            REACTIVE_IGNORE
-        ) {
+        try
+            service.subscribe(
+                originChainId,
+                chainlinkAggregatorAddress,
+                ANSWER_UPDATED_TOPIC,
+                REACTIVE_IGNORE,
+                REACTIVE_IGNORE,
+                REACTIVE_IGNORE
+            )
+        {
             // Subscription succeeded in a live Reactive environment.
         } catch {
             // No-op: local/test deployments lack the Reactive system contract.
@@ -77,8 +84,14 @@ contract PriceFeedMirror is IReactive {
     function react(LogRecord calldata log) external onlyService {
         // 1. Security Check: Ensure the log is from the expected Chainlink Aggregator
         require(log.chain_id == originChainId, "Pricer: Unexpected chain");
-        require(log._contract == chainlinkAggregatorAddress, "Pricer: Unexpected contract");
-        require(log.topic_0 == ANSWER_UPDATED_TOPIC, "Pricer: Unexpected topic");
+        require(
+            log._contract == chainlinkAggregatorAddress,
+            "Pricer: Unexpected contract"
+        );
+        require(
+            log.topic_0 == ANSWER_UPDATED_TOPIC,
+            "Pricer: Unexpected topic"
+        );
 
         // 2. Decode the AnswerUpdated event payload directly from the log record
         int256 answer = _toSigned(log.topic_1);
@@ -106,21 +119,34 @@ contract PriceFeedMirror is IReactive {
         );
 
         // 4. Emit Callback to trigger cross-chain transaction
-        emit Callback(
-            destinationChainId,
-            feedProxyAddress,
-            GAS_LIMIT,
-            payload
-        );
-    }
-
-    receive() external payable {
-        emit Funded(msg.sender, msg.value);
+        emit Callback(destinationChainId, feedProxyAddress, GAS_LIMIT, payload);
     }
 
     function _toSigned(uint256 value) private pure returns (int256 signed) {
         assembly {
             signed := value
         }
+    }
+
+    // Allow the owner to update the feed proxy address (in case of redeploys/migrations)
+    event FeedProxyUpdated(address indexed oldAddress, address indexed newAddress);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Pricer: caller not owner");
+        _;
+    }
+
+    function setFeedProxyAddress(address _new) external onlyOwner {
+        require(_new != address(0), "Pricer: zero address");
+        address old = feedProxyAddress;
+        feedProxyAddress = _new;
+        emit FeedProxyUpdated(old, _new);
+    }
+
+    // Allow funding the contract (Reactive uses REACT token balance); emit event for visibility
+    event Funded(address indexed funder, uint256 amount);
+
+    receive() external payable {
+        emit Funded(msg.sender, msg.value);
     }
 }

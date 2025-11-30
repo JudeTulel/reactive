@@ -57,8 +57,8 @@ interface IPriceFeedMirror {
 
 contract TestPriceFeedMirror is Script {
     // Contract addresses
-    address constant PRICE_FEED_MIRROR = 0x984E73D5F27859b05118205A9C73A3B5e0816B4B; // Lasna
-    address constant FEED_PROXY = 0x8dca148Fc929cD40722405FdCA958221F4155d66;// FeedProxy on Sepolia
+    address constant PRICE_FEED_MIRROR = 0x79b8176184a2eF79502a7b17E5A46B63aC7601f8; // Lasna
+    address constant FEED_PROXY = 0x58341b47d8227c9c40252E76947D8EF0a32bE3C7;// FeedProxy on Sepolia
     address constant CHAINLINK_AGGREGATOR = 0x001382149eBa3441043c1c66972b4772963f5D43; // Polygon Amoy
 
     // RPC URLs
